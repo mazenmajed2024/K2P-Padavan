@@ -24,24 +24,13 @@ jobs:
           REPO_PATH="hanwckf/rt-n56u.git"
           git clone --depth=1 "https://${REPO_HOST}/${REPO_PATH}" padavan
 
-      - name: Setup Prebuilt Toolchain
+      - name: Build Toolchain
         run: |
-          cd padavan
-          mkdir -p toolchain
-          cd toolchain
-          REPO_HOST="github.com"
-          REPO_PATH="hanwckf/rt-n56u/releases/download/toolchain/mipsel-linux-uclibc.tar.xz"
-          wget -q "https://${REPO_HOST}/${REPO_PATH}" -O toolchain.tar.xz
-          tar -xf toolchain.tar.xz
-          rm -f toolchain.tar.xz
-          # Ensure toolchain-3.4.x exists regardless of extracted folder name
-          if [ ! -d "toolchain-3.4.x" ]; then
-            EXTRACTED_DIR=$(find . -maxdepth 1 -type d ! -name "." | head -n 1)
-            if [ -n "$EXTRACTED_DIR" ]; then
-              mv "$EXTRACTED_DIR" toolchain-3.4.x
-            fi
+          cd padavan/toolchain-mipsel
+          if [ -f "./clean_sources" ]; then
+            ./clean_sources
           fi
-          ls -la toolchain-3.4.x/bin/
+          ./build_toolchain
 
       - name: Configure K2P 16MB with OpenVPN and Network Controls
         run: |
@@ -67,10 +56,6 @@ jobs:
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/#CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TOR=y/#CONFIG_FIRMWARE_INCLUDE_TOR=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/#CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
-          
-          # Point CONFIG_TOOLCHAIN_DIR to the extracted toolchain-3.4.x
-          TOOLCHAIN_PATH="$(cd ../toolchain/toolchain-3.4.x && pwd)"
-          sed -i "s|CONFIG_TOOLCHAIN_DIR=.*|CONFIG_TOOLCHAIN_DIR=\"${TOOLCHAIN_PATH}\"|g" $CONFIG_FILE
           
           # Copy template to active .config
           cp -f $CONFIG_FILE .config
