@@ -24,6 +24,63 @@ jobs:
           REPO_PATH="hanwckf/rt-n56u.git"
           git clone --depth=1 "https://${REPO_HOST}/${REPO_PATH}" padavan
 
+      - name: Add OVPN File Upload Button to VPN Client UI
+        run: |
+          python3 -c '
+          import glob, os
+
+          # Locate VPN Client web UI files
+          files = glob.glob("padavan/trunk/user/www/**/VPN_Client.asp", recursive=True) + glob.glob("padavan/trunk/user/www/**/vpnc.asp", recursive=True)
+          
+          upload_script = """
+          <div style="background:#f4f4f4;padding:10px;margin:10px 0;border:1px solid #ccc;border-radius:4px;">
+            <b>Import .ovpn Config File: </b>
+            <input type="file" id="ovpn_file_input" accept=".ovpn,.conf,.txt" onchange="parseOvpnFile(this)" />
+          </div>
+          <script>
+          function parseOvpnFile(input) {
+            if (!input.files || !input.files[0]) return;
+            var reader = new FileReader();
+            reader.onload = function(e) {
+              var text = e.target.result;
+              var remoteMatch = text.match(/^remote\\s+([^\\s]+)\\s+(\\d+)/m);
+              if (remoteMatch) {
+                if (document.form.vpnc_peer) document.form.vpnc_peer.value = remoteMatch[1];
+                if (document.form.vpnc_ov_port) document.form.vpnc_ov_port.value = remoteMatch[2];
+              }
+              var protoMatch = text.match(/^proto\\s+(udp|tcp)/m);
+              if (protoMatch && document.form.vpnc_ov_prot) {
+                document.form.vpnc_ov_prot.value = (protoMatch[1].toLowerCase() === "tcp") ? "1" : "0";
+              }
+              var cipherMatch = text.match(/^cipher\\s+([^\\s]+)/m);
+              if (cipherMatch && document.form.vpnc_ov_ciph) {
+                document.form.vpnc_ov_ciph.value = cipherMatch[1];
+              }
+              var caMatch = text.match(/<ca>([\\s\\S]*?)<\\/ca>/);
+              if (caMatch && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = caMatch[1].trim();
+              var certMatch = text.match(/<cert>([\\s\\S]*?)<\\/cert>/);
+              if (certMatch && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = certMatch[1].trim();
+              var keyMatch = text.match(/<key>([\\s\\S]*?)<\\/key>/);
+              if (keyMatch && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = keyMatch[1].trim();
+              var tlsMatch = text.match(/<tls-auth>([\\s\\S]*?)<\\/tls-auth>/) || text.match(/<tls-crypt>([\\s\\S]*?)<\\/tls-crypt>/);
+              if (tlsMatch && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tlsMatch[1].trim();
+              alert("OVPN file imported! Please verify username/password if required, then click Apply.");
+            };
+            reader.readAsText(input.files[0]);
+          }
+          </script>
+          """
+
+          for fpath in files:
+              with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                  content = f.read()
+              if "vpnc_peer" in content and "ovpn_file_input" not in content:
+                  content = content.replace("<form ", upload_script + "\n<form ", 1)
+                  with open(fpath, "w", encoding="utf-8") as f:
+                      f.write(content)
+                  print("Injected OVPN uploader into:", fpath)
+          '
+
       - name: Build Toolchain
         run: |
           cd padavan/toolchain-mipsel
@@ -73,5 +130,5 @@ jobs:
       - name: Upload Firmware Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Phicomm-K2P-Padavan-OpenVPN
+          name: Phicomm-K2P-Padavan-OpenVPN-Uploader
           path: padavan/trunk/images/*.trx
