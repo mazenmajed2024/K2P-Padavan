@@ -48,11 +48,13 @@ jobs:
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/#CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TOR=y/#CONFIG_FIRMWARE_INCLUDE_TOR=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/#CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
+          
+          # Copy template to active .config
+          cp -f $CONFIG_FILE .config
 
       - name: Setup Prebuilt Toolchain
         run: |
           cd padavan
-          ls -la
           if [ -d "toolchain-mipsel" ]; then
             cd toolchain-mipsel
             if [ -f "./dl_toolchain.sh" ]; then
@@ -74,7 +76,11 @@ jobs:
         run: |
           cd padavan/trunk
           ./clear_tree
-          ./build_firmware_modify K2P
+          if [ -f "./build_firmware_modify" ]; then
+            ./build_firmware_modify K2P
+          else
+            ./build_firmware
+          fi
 
       - name: Check Firmware Size
         run: |
