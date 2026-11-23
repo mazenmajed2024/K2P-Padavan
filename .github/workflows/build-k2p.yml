@@ -24,7 +24,7 @@ jobs:
           REPO_PATH="hanwckf/rt-n56u.git"
           git clone --depth=1 "https://${REPO_HOST}/${REPO_PATH}" padavan
 
-      - name: Inject OVPN File Importer and Live Status Badge into VPN Client Page
+      - name: Inject Smart OVPN Importer and Live Status Badge
         run: |
           python3 - << 'EOF'
           import glob
@@ -64,59 +64,93 @@ jobs:
           setInterval(updateOvpnLiveStatus, 2000);
           window.addEventListener("load", updateOvpnLiveStatus);
 
+          function extractTag(text, tag) {
+            var startTag = "<" + tag + ">";
+            var endTag = "</" + tag + ">";
+            var s = text.indexOf(startTag);
+            var e = text.indexOf(endTag);
+            if (s !== -1 && e !== -1 && e > s) {
+              return text.substring(s + startTag.length, e).trim();
+            }
+            return "";
+          }
+
           function parseOvpnFile(input) {
-            if (!input.files || !input.files) return;
+            if (!input.files || input.files.length === 0) return;
+            var file = input.files.item(0);
             var reader = new FileReader();
             reader.onload = function(e) {
               var text = e.target.result;
-              
-              var remoteMatch = text.match(/^remote\s+([^\s]+)\s+(\d+)/m);
-              if (remoteMatch) {
-                if (document.form.vpnc_peer) document.form.vpnc_peer.value = remoteMatch;
-                if (document.form.vpnc_ov_port) document.form.vpnc_ov_port.value = remoteMatch;
-              }
-              
-              var protoMatch = text.match(/^proto\s+(udp|tcp)/mi);
-              if (protoMatch && document.form.vpnc_ov_prot) {
-                document.form.vpnc_ov_prot.value = (protoMatch.toLowerCase() === "tcp") ? "1" : "0";
-              }
-              
-              var cipherMatch = text.match(/^(?:cipher|data-ciphers)\s+([^\s:]+)/m);
-              if (cipherMatch && document.form.vpnc_ov_ciph) {
-                document.form.vpnc_ov_ciph.value = cipherMatch;
-              }
-              
-              var caMatch = text.match(/<ca>([\s\S]*?)<\/ca>/);
-              if (caMatch && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = caMatch.trim();
-              
-              var certMatch = text.match(/<cert>([\s\S]*?)<\/cert>/);
-              if (certMatch && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = certMatch.trim();
-              
-              var keyMatch = text.match(/<key>([\s\S]*?)<\/key>/);
-              if (keyMatch && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = keyMatch.trim();
-              
-              var tlsMatch = text.match(/<tls-auth>([\s\S]*?)<\/tls-auth>/) || text.match(/<tls-crypt>([\s\S]*?)<\/tls-crypt>/);
-              if (tlsMatch && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tlsMatch.trim();
-
-              var authBlock = text.match(/<auth-user-pass>([\s\S]*?)<\/auth-user-pass>/);
-              var requiresAuth = /^auth-user-pass/m.test(text);
               var msgBox = document.getElementById("ovpn_status_msg");
 
-              if (authBlock) {
-                var creds = authBlock.trim().split(/\r?\n/);
+              // 1. Switch VPN Client Type to OpenVPN (value "2" in Padavan) and refresh UI fields
+              if (document.form.vpnc_type) {
+                document.form.vpnc_type.value = "2";
+                if (typeof change_vpnc_type === "function") {
+                  change_vpnc_type();
+                }
+              }
+              if (document.form.vpnc_enable) {
+                document.form.vpnc_enable.value = "1";
+              }
+
+              // 2. Extract Remote Server & Port
+              var lines = text.split(/\r?\n/);
+              for (var i = 0; i < lines.length; i++) {
+                var line = lines.slice(i, i + 1).pop().trim();
+                if (line.indexOf("remote ") === 0) {
+                  var parts = line.split(/\s+/);
+                  if (parts.length >= 2 && document.form.vpnc_peer) {
+                    document.form.vpnc_peer.value = parts.slice(1, 2).pop();
+                  }
+                  if (parts.length >= 3 && document.form.vpnc_ov_port) {
+                    document.form.vpnc_ov_port.value = parts.slice(2, 3).pop();
+                  }
+                } else if (line.indexOf("proto ") === 0 && document.form.vpnc_ov_prot) {
+                  var p = line.split(/\s+/).slice(1, 2).pop().toLowerCase();
+                  document.form.vpnc_ov_prot.value = (p.indexOf("tcp") === 0) ? "1" : "0";
+                } else if ((line.indexOf("cipher ") === 0 || line.indexOf("data-ciphers ") === 0) && document.form.vpnc_ov_ciph) {
+                  var c = line.split(/\s+/).slice(1, 2).pop().split(":").shift();
+                  document.form.vpnc_ov_ciph.value = c;
+                } else if (line.indexOf("comp-lzo") === 0 && document.form.vpnc_ov_compr) {
+                  document.form.vpnc_ov_compr.value = "1";
+                }
+              }
+
+              // 3. Extract Certificates and Keys
+              var ca = extractTag(text, "ca");
+              if (ca && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = ca;
+
+              var cert = extractTag(text, "cert");
+              if (cert && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = cert;
+
+              var key = extractTag(text, "key");
+              if (key && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = key;
+
+              var tls = extractTag(text, "tls-auth") || extractTag(text, "tls-crypt");
+              if (tls && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tls;
+
+              // 4. Extract Embedded Username/Password or Prompt User
+              var auth = extractTag(text, "auth-user-pass");
+              var requiresAuth = /^auth-user-pass/m.test(text);
+
+              if (auth) {
+                var creds = auth.split(/\r?\n/);
                 if (creds.length >= 2) {
-                  if (document.form.vpnc_user) document.form.vpnc_user.value = creds.trim();
-                  if (document.form.vpnc_pass) document.form.vpnc_pass.value = creds.trim();
-                  msgBox.innerHTML = "OVPN imported with Username & Password! Click Apply to connect.";
+                  if (document.form.vpnc_user) document.form.vpnc_user.value = creds.slice(0, 1).pop().trim();
+                  if (document.form.vpnc_pass) document.form.vpnc_pass.value = creds.slice(1, 2).pop().trim();
+                  msgBox.style.color = "#188038";
+                  msgBox.innerHTML = "Success! Server, certificates, username & password loaded. Click Apply.";
                 }
               } else if (requiresAuth) {
                 msgBox.style.color = "#c5221f";
-                msgBox.innerHTML = "OVPN imported! Please enter your Username and Password below, then click Apply.";
+                msgBox.innerHTML = "Config loaded! Enter your Username & Password below, then click Apply.";
               } else {
-                msgBox.innerHTML = "OVPN certificates imported successfully! Click Apply to connect.";
+                msgBox.style.color = "#188038";
+                msgBox.innerHTML = "Config & certificates loaded! Click Apply to connect.";
               }
             };
-            reader.readAsText(input.files);
+            reader.readAsText(file);
           }
           </script>
           """
@@ -131,7 +165,7 @@ jobs:
                       content = content[:idx] + upload_box + "\n" + content[idx:]
                       with open(fpath, "w", encoding="utf-8") as f:
                           f.write(content)
-                      print("SUCCESS: Injected OVPN Importer and Status Badge into", fpath)
+                      print("SUCCESS: Injected Smart OVPN Importer into", fpath)
                       injected_count += 1
 
           if injected_count == 0:
@@ -172,17 +206,3 @@ jobs:
           cp -f $CONFIG_FILE .config
 
       - name: Build K2P Firmware
-        run: |
-          cd padavan/trunk
-          ./clear_tree
-          fakeroot ./build_firmware_modify K2P
-
-      - name: Check Firmware Size
-        run: |
-          ls -lh padavan/trunk/images/*.trx
-
-      - name: Upload Firmware Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Phicomm-K2P-Padavan-Lite10MB-OVPN
-          path: padavan/trunk/images/*.trx
