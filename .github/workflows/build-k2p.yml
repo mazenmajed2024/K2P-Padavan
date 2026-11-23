@@ -47,13 +47,17 @@ jobs:
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/#CONFIG_FIRMWARE_INCLUDE_ARIA=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/#CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TOR=y/#CONFIG_FIRMWARE_INCLUDE_TOR=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/#CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
 
-      - name: Build Toolchain
+      - name: Setup Toolchain
         run: |
-          cd padavan/toolchain-mipsel
-          ./clean_sources
-          ./build_toolchain
+          cd padavan/toolchain
+          if [ -f "./dl_toolchain.sh" ]; then
+            chmod +x ./dl_toolchain.sh
+            ./dl_toolchain.sh
+          else
+            ./build_toolchain
+          fi
 
       - name: Build K2P Firmware
         run: |
