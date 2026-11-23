@@ -1,4 +1,4 @@
-name: Build Phicomm K2P Padavan Lite 10MB OVPN
+name: Build Phicomm K2P Padavan TPLink Style OVPN
 
 on:
   workflow_dispatch:
@@ -24,26 +24,238 @@ jobs:
           REPO_PATH="hanwckf/rt-n56u.git"
           git clone --depth=1 "https://${REPO_HOST}/${REPO_PATH}" padavan
 
-      - name: Inject Smart OVPN Importer and Live Status Badge
+      - name: Inject TP-Link Style OpenVPN Client UI
         run: |
-          cat << 'EOF' > inject_ovpn.py
+          cat << 'EOF' > inject_tplink_ovpn.py
           import glob
 
-          upload_box = """
-          <div id="ovpn_importer_box" style="background:#e8f0fe;padding:12px;margin:10px 0;border:2px solid #1a73e8;border-radius:6px;color:#000;font-family:Arial,sans-serif;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;">
-            <div>
-              <span style="font-size:14px;font-weight:bold;color:#1a73e8;">Import .ovpn Config File: </span>
-              <input type="file" id="ovpn_file_input" accept=".ovpn,.conf,.txt" onchange="parseOvpnFile(this)" style="margin-left:8px;" />
+          tplink_ui = """
+          <style>
+          #tplink_vpn_card {
+            background: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+            padding: 20px;
+            margin: 12px 0 18px 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            color: #1e293b;
+          }
+          .tp-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #f1f5f9;
+            padding-bottom: 14px;
+            margin-bottom: 16px;
+          }
+          .tp-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #00a896;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .tp-badge {
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #fff;
+            background: #ef4444;
+            letter-spacing: 0.3px;
+          }
+          .tp-badge.connected {
+            background: #00a896;
+          }
+          .tp-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 14px;
+            gap: 10px;
+          }
+          .tp-label {
+            width: 160px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+          }
+          .tp-control {
+            flex: 1;
+            min-width: 220px;
+          }
+          .tp-file-btn {
+            display: inline-block;
+            background: #f0fdfa;
+            border: 1.5px dashed #00a896;
+            color: #00897b;
+            padding: 9px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .tp-file-btn:hover {
+            background: #ccfbf1;
+          }
+          .tp-input {
+            width: 100%;
+            max-width: 280px;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #0f172a;
+            background: #fff;
+          }
+          .tp-input:focus {
+            outline: none;
+            border-color: #00a896;
+            box-shadow: 0 0 0 2px rgba(0,168,150,0.15);
+          }
+          .tp-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 18px;
+            padding-top: 14px;
+            border-top: 1px solid #f1f5f9;
+          }
+          .tp-save-btn {
+            background: #00a896;
+            color: #fff;
+            border: none;
+            padding: 10px 26px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,168,150,0.3);
+          }
+          .tp-save-btn:hover {
+            background: #00897b;
+          }
+          .tp-adv-btn {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            padding: 9px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+          }
+          .tp-msg {
+            margin-top: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #00897b;
+          }
+          </style>
+
+          <div id="tplink_vpn_card">
+            <div class="tp-header">
+              <div class="tp-title">OpenVPN Client</div>
+              <div id="tp_status_badge" class="tp-badge">Disconnected</div>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;">
-              <span style="font-weight:bold;font-size:13px;">Status:</span>
-              <span id="ovpn_live_badge" style="padding:4px 10px;border-radius:12px;font-size:12px;font-weight:bold;color:#fff;background:#d93025;">Disconnected</span>
+
+            <div class="tp-row">
+              <div class="tp-label">VPN Connection:</div>
+              <div class="tp-control">
+                <select id="tp_enable_select" class="tp-input" style="max-width:160px;" onchange="syncTpEnable(this.value)">
+                  <option value="1">Enabled (ON)</option>
+                  <option value="0">Disabled (OFF)</option>
+                </select>
+              </div>
             </div>
-            <div id="ovpn_status_msg" style="width:100%;margin-top:4px;color:#0b57d0;font-weight:bold;font-size:13px;"></div>
+
+            <div class="tp-row">
+              <div class="tp-label">Configuration File:</div>
+              <div class="tp-control">
+                <label class="tp-file-btn">
+                  Browse .ovpn File...
+                  <input type="file" id="ovpn_file_input" accept=".ovpn,.conf,.txt" onchange="parseOvpnFile(this)" style="display:none;" />
+                </label>
+                <span id="tp_file_name" style="margin-left:10px;font-size:12px;color:#64748b;">No file chosen</span>
+                <div id="ovpn_status_msg" class="tp-msg"></div>
+              </div>
+            </div>
+
+            <div class="tp-row">
+              <div class="tp-label">Server Address:</div>
+              <div class="tp-control">
+                <input type="text" id="tp_server_display" class="tp-input" placeholder="Auto-filled from .ovpn" oninput="if(document.form.vpnc_peer) document.form.vpnc_peer.value=this.value;" />
+              </div>
+            </div>
+
+            <div class="tp-row">
+              <div class="tp-label">Username:</div>
+              <div class="tp-control">
+                <input type="text" id="tp_user_input" class="tp-input" placeholder="Optional (if required by server)" oninput="if(document.form.vpnc_user) document.form.vpnc_user.value=this.value;" />
+              </div>
+            </div>
+
+            <div class="tp-row">
+              <div class="tp-label">Password:</div>
+              <div class="tp-control">
+                <input type="password" id="tp_pass_input" class="tp-input" placeholder="Optional (if required by server)" oninput="if(document.form.vpnc_pass) document.form.vpnc_pass.value=this.value;" />
+              </div>
+            </div>
+
+            <div class="tp-actions">
+              <button type="button" class="tp-save-btn" onclick="tpApplyAndConnect()">Save & Connect</button>
+              <button type="button" class="tp-adv-btn" onclick="togglePadavanRaw()">Show / Hide Advanced Settings</button>
+            </div>
           </div>
+
           <script>
+          function syncTpEnable(val) {
+            if (document.form.vpnc_enable) {
+              document.form.vpnc_enable.value = val;
+            }
+          }
+
+          function tpApplyAndConnect() {
+            if (document.form.vpnc_type) document.form.vpnc_type.value = "2";
+            if (document.form.vpnc_user) document.form.vpnc_user.value = document.getElementById("tp_user_input").value;
+            if (document.form.vpnc_pass) document.form.vpnc_pass.value = document.getElementById("tp_pass_input").value;
+            if (typeof applyRule === "function") {
+              applyRule();
+            } else {
+              document.form.submit();
+            }
+          }
+
+          function togglePadavanRaw() {
+            var tbls = document.getElementsByTagName("table");
+            for (var i = 0; i < tbls.length; i++) {
+              var t = tbls.item(i);
+              if (t.innerHTML.indexOf("vpnc_peer") !== -1 && t.id !== "tplink_vpn_card") {
+                t.style.display = (t.style.display === "none") ? "" : "none";
+              }
+            }
+          }
+
+          function initTpLinkUI() {
+            if (document.form && document.form.vpnc_enable) {
+              document.getElementById("tp_enable_select").value = document.form.vpnc_enable.value;
+            }
+            if (document.form && document.form.vpnc_peer) {
+              document.getElementById("tp_server_display").value = document.form.vpnc_peer.value;
+            }
+            if (document.form && document.form.vpnc_user) {
+              document.getElementById("tp_user_input").value = document.form.vpnc_user.value;
+            }
+            if (document.form && document.form.vpnc_pass) {
+              document.getElementById("tp_pass_input").value = document.form.vpnc_pass.value;
+            }
+          }
+
           function updateOvpnLiveStatus() {
-            var badge = document.getElementById("ovpn_live_badge");
+            var badge = document.getElementById("tp_status_badge");
             if (!badge) return;
             var isConnected = false;
             var stateCell = document.getElementById("vpnc_state") || document.getElementById("vpnc_status");
@@ -55,157 +267,11 @@ jobs:
             }
             if (isConnected) {
               badge.innerText = "Connected";
-              badge.style.background = "#188038";
+              badge.className = "tp-badge connected";
             } else {
               badge.innerText = "Disconnected";
-              badge.style.background = "#d93025";
+              badge.className = "tp-badge";
             }
           }
+
           setInterval(updateOvpnLiveStatus, 2000);
-          window.addEventListener("load", updateOvpnLiveStatus);
-
-          function extractTag(text, tag) {
-            var startTag = "<" + tag + ">";
-            var endTag = "</" + tag + ">";
-            var s = text.indexOf(startTag);
-            var e = text.indexOf(endTag);
-            if (s !== -1 && e !== -1 && e > s) {
-              return text.substring(s + startTag.length, e).trim();
-            }
-            return "";
-          }
-
-          function parseOvpnFile(input) {
-            if (!input.files || input.files.length === 0) return;
-            var file = input.files.item(0);
-            var reader = new FileReader();
-            reader.onload = function(e) {
-              var text = e.target.result;
-              var msgBox = document.getElementById("ovpn_status_msg");
-
-              if (document.form.vpnc_type) {
-                document.form.vpnc_type.value = "2";
-                if (typeof change_vpnc_type === "function") {
-                  change_vpnc_type();
-                }
-              }
-              if (document.form.vpnc_enable) {
-                document.form.vpnc_enable.value = "1";
-              }
-
-              var lines = text.split(/\r?\n/);
-              for (var i = 0; i < lines.length; i++) {
-                var line = lines.slice(i, i + 1).pop().trim();
-                if (line.indexOf("remote ") === 0) {
-                  var parts = line.split(/\s+/);
-                  if (parts.length >= 2 && document.form.vpnc_peer) {
-                    document.form.vpnc_peer.value = parts.slice(1, 2).pop();
-                  }
-                  if (parts.length >= 3 && document.form.vpnc_ov_port) {
-                    document.form.vpnc_ov_port.value = parts.slice(2, 3).pop();
-                  }
-                } else if (line.indexOf("proto ") === 0 && document.form.vpnc_ov_prot) {
-                  var p = line.split(/\s+/).slice(1, 2).pop().toLowerCase();
-                  document.form.vpnc_ov_prot.value = (p.indexOf("tcp") === 0) ? "1" : "0";
-                } else if ((line.indexOf("cipher ") === 0 || line.indexOf("data-ciphers ") === 0) && document.form.vpnc_ov_ciph) {
-                  var c = line.split(/\s+/).slice(1, 2).pop().split(":").shift();
-                  document.form.vpnc_ov_ciph.value = c;
-                } else if (line.indexOf("comp-lzo") === 0 && document.form.vpnc_ov_compr) {
-                  document.form.vpnc_ov_compr.value = "1";
-                }
-              }
-
-              var ca = extractTag(text, "ca");
-              if (ca && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = ca;
-
-              var cert = extractTag(text, "cert");
-              if (cert && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = cert;
-
-              var key = extractTag(text, "key");
-              if (key && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = key;
-
-              var tls = extractTag(text, "tls-auth") || extractTag(text, "tls-crypt");
-              if (tls && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tls;
-
-              var auth = extractTag(text, "auth-user-pass");
-              var requiresAuth = /^auth-user-pass/m.test(text);
-
-              if (auth) {
-                var creds = auth.split(/\r?\n/);
-                if (creds.length >= 2) {
-                  if (document.form.vpnc_user) document.form.vpnc_user.value = creds.slice(0, 1).pop().trim();
-                  if (document.form.vpnc_pass) document.form.vpnc_pass.value = creds.slice(1, 2).pop().trim();
-                  msgBox.style.color = "#188038";
-                  msgBox.innerHTML = "Success! Server, certificates, username & password loaded. Click Apply.";
-                }
-              } else if (requiresAuth) {
-                msgBox.style.color = "#c5221f";
-                msgBox.innerHTML = "Config loaded! Enter your Username & Password below, then click Apply.";
-              } else {
-                msgBox.style.color = "#188038";
-                msgBox.innerHTML = "Config & certificates loaded! Click Apply to connect.";
-              }
-            };
-            reader.readAsText(file);
-          }
-          </script>
-          """
-
-          injected_count = 0
-          for fpath in glob.glob("padavan/trunk/user/www/**/*.asp", recursive=True):
-              with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
-                  content = f.read()
-              if "vpnc_peer" in content and "ovpn_importer_box" not in content:
-                  if "<form" in content:
-                      idx = content.find("<form")
-                      content = content[:idx] + upload_box + "\n" + content[idx:]
-                      with open(fpath, "w", encoding="utf-8") as f:
-                          f.write(content)
-                      print("SUCCESS: Injected Smart OVPN Importer into", fpath)
-                      injected_count += 1
-
-          if injected_count == 0:
-              raise RuntimeError("ERROR: Could not find VPN Client ASP file to inject!")
-          EOF
-          python3 inject_ovpn.py
-
-      - name: Build Toolchain
-        run: |
-          cd padavan/toolchain-mipsel
-          if [ -f "./clean_sources" ]; then
-            ./clean_sources
-          fi
-          ./build_toolchain
-
-      - name: Configure K2P ~10MB Lite with OpenVPN, WISP Mode and Core Network Controls
-        run: |
-          cd padavan/trunk
-          CONFIG_FILE="configs/templates/K2P.config"
-          sed -i 's/CONFIG_FIRMWARE_UI_LANG_CN=y/#CONFIG_FIRMWARE_UI_LANG_CN=y/g' $CONFIG_FILE
-          echo "CONFIG_FIRMWARE_UI_LANG_EN=y" >> $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENVPN.*/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/g' $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE.*/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_WIFI2_APCLI.*/CONFIG_FIRMWARE_WIFI2_APCLI=y/g' $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_WIFI5_APCLI.*/CONFIG_FIRMWARE_WIFI5_APCLI=y/g' $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_DDNS.*/CONFIG_FIRMWARE_INCLUDE_DDNS=y/g' $CONFIG_FILE
-          for PKG in ARIA TRANSMISSION TOR SFE TCPDUMP HTTPS IPSET XUPNPD UPNP_IGD_V2 SHADOWSOCKS V2RAY SSR; do
-            sed -i "s/^CONFIG_FIRMWARE_INCLUDE_${PKG}=y/#CONFIG_FIRMWARE_INCLUDE_${PKG}=y/g" $CONFIG_FILE
-          done
-          sed -i 's/^CONFIG_FIRMWARE_ENABLE_IPV6=y/#CONFIG_FIRMWARE_ENABLE_IPV6=y/g' $CONFIG_FILE
-          cp -f $CONFIG_FILE .config
-
-      - name: Build K2P Firmware
-        run: |
-          cd padavan/trunk
-          ./clear_tree
-          fakeroot ./build_firmware_modify K2P
-
-      - name: Check Firmware Size
-        run: |
-          ls -lh padavan/trunk/images/*.trx
-
-      - name: Upload Firmware Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Phicomm-K2P-Padavan-Lite10MB-OVPN
-          path: padavan/trunk/images/*.trx
