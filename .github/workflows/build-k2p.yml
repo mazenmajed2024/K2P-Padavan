@@ -1,1 +1,108 @@
+name: Build Arabic Phicomm K2P Padavan
 
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot cpio git python3-docutils python3-pip gettext automake autopoint texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
+          pip3 install deep-translator
+
+      - name: Clone Padavan Source (hanwckf)
+        run: |
+          git clone --depth=1 https://github.com padavan
+
+      - name: Generate Arabic Translation & RTL Support
+        run: |
+          cd padavan/trunk/user/www/dict
+          cp EN.dict AR.dict
+          
+          # سكريبت بايثون لترجمة القاموس الإنجليزي إلى العربية تلقائياً مع الحفاظ على المتغيرات البرمجية
+          python3 -c '
+          import re
+          from deep_translator import GoogleTranslator
+
+          translator = GoogleTranslator(source="en", target="ar")
+          with open("EN.dict", "r", encoding="utf-8") as f:
+              lines = f.readlines()
+
+          out = []
+          for line in lines:
+              if "=" in line and not line.strip().startswith("#"):
+                  key, val = line.split("=", 1)
+                  val_clean = val.strip()
+                  # تجاهل السطور الفارغة أو التي تحتوي على أكواد فقط
+                  if val_clean and not val_clean.startswith("http") and len(val_clean) < 200:
+                      try:
+                          translated = translator.translate(val_clean)
+                          out.append(f"{key}={translated}\n")
+                          continue
+                      except Exception:
+                          pass
+              out.append(line)
+
+          with open("AR.dict", "w", encoding="utf-8") as f:
+              f.writelines(out)
+          '
+
+      - name: Configure K2P 16MB with Arabic, OpenVPN & Network Controls
+        run: |
+          cd padavan/trunk
+          CONFIG_FILE="configs/templates/K2P.config"
+          
+          # تفعيل اللغة الإنجليزية والعربية في الفيرموير
+          sed -i 's/CONFIG_FIRMWARE_UI_LANG_CN=y/#CONFIG_FIRMWARE_UI_LANG_CN=y/g' $CONFIG_FILE
+          echo "CONFIG_FIRMWARE_UI_LANG_EN=y" >> $CONFIG_FILE
+          echo "CONFIG_FIRMWARE_UI_LANG_AR=y" >> $CONFIG_FILE
+          
+          # تسجيل اللغة العربية في ملف بناء الواجهة
+          sed -i 's/EN/EN AR/g' user/www/Makefile
+          
+          # تفعيل OpenVPN (سيرفر وعميل) و OpenSSL
+          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENVPN.*/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/g' $CONFIG_FILE
+          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE.*/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' $CONFIG_FILE
+          
+          # تفعيل أدوات الشبكة (DDNS, IPv6, HTTPS, tcpdump)
+          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_DDNS.*/CONFIG_FIRMWARE_INCLUDE_DDNS=y/g' $CONFIG_FILE
+          sed -i 's/.*CONFIG_FIRMWARE_ENABLE_IPV6.*/CONFIG_FIRMWARE_ENABLE_IPV6=y/g' $CONFIG_FILE
+          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_HTTPS.*/CONFIG_FIRMWARE_INCLUDE_HTTPS=y/g' $CONFIG_FILE
+          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_TCPDUMP.*/CONFIG_FIRMWARE_INCLUDE_TCPDUMP=y/g' $CONFIG_FILE
+          
+          # حذف الحزم الثقيلة لضمان بقاء الحجم أقل من 15MB
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/#CONFIG_FIRMWARE_INCLUDE_ARIA=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/#CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_TOR=y/#CONFIG_FIRMWARE_INCLUDE_TOR=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
+
+      - name: Build Toolchain
+        run: |
+          cd padavan/toolchain-mipsel
+          ./clean_sources
+          ./build_toolchain
+
+      - name: Build K2P Firmware
+        run: |
+          cd padavan/trunk
+          ./clear_tree
+          ./build_firmware_modify K2P
+
+      - name: Check Firmware Size
+        run: |
+          ls -lh padavan/trunk/images/*.trx
+
+      - name: Upload Firmware Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Phicomm-K2P-Padavan-Arabic-OpenVPN
+          path: padavan/trunk/images/*.trx
