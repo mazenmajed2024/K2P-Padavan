@@ -47,16 +47,27 @@ jobs:
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/#CONFIG_FIRMWARE_INCLUDE_ARIA=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/#CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TOR=y/#CONFIG_FIRMWARE_INCLUDE_TOR=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/#CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
 
-      - name: Setup Toolchain
+      - name: Setup Prebuilt Toolchain
         run: |
-          cd padavan/toolchain
-          if [ -f "./dl_toolchain.sh" ]; then
-            chmod +x ./dl_toolchain.sh
-            ./dl_toolchain.sh
+          cd padavan
+          ls -la
+          if [ -d "toolchain-mipsel" ]; then
+            cd toolchain-mipsel
+            if [ -f "./dl_toolchain.sh" ]; then
+              chmod +x ./dl_toolchain.sh && ./dl_toolchain.sh
+            elif [ -f "./build_toolchain" ]; then
+              ./build_toolchain
+            fi
           else
-            ./build_toolchain
+            mkdir -p toolchain-mipsel
+            cd toolchain-mipsel
+            REPO_HOST="github.com"
+            REPO_PATH="hanwckf/rt-n56u/releases/download/toolchain/mipsel-linux-uclibc.tar.xz"
+            wget -q "https://${REPO_HOST}/${REPO_PATH}" -O toolchain.tar.xz
+            tar -xf toolchain.tar.xz
+            rm -f toolchain.tar.xz
           fi
 
       - name: Build K2P Firmware
