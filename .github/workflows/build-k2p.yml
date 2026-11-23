@@ -26,7 +26,7 @@ jobs:
 
       - name: Inject Smart OVPN Importer and Live Status Badge
         run: |
-          python3 - << 'EOF'
+          cat << 'EOF' > inject_ovpn.py
           import glob
 
           upload_box = """
@@ -83,7 +83,6 @@ jobs:
               var text = e.target.result;
               var msgBox = document.getElementById("ovpn_status_msg");
 
-              // 1. Switch VPN Client Type to OpenVPN (value "2" in Padavan) and refresh UI fields
               if (document.form.vpnc_type) {
                 document.form.vpnc_type.value = "2";
                 if (typeof change_vpnc_type === "function") {
@@ -94,7 +93,6 @@ jobs:
                 document.form.vpnc_enable.value = "1";
               }
 
-              // 2. Extract Remote Server & Port
               var lines = text.split(/\r?\n/);
               for (var i = 0; i < lines.length; i++) {
                 var line = lines.slice(i, i + 1).pop().trim();
@@ -117,7 +115,6 @@ jobs:
                 }
               }
 
-              // 3. Extract Certificates and Keys
               var ca = extractTag(text, "ca");
               if (ca && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = ca;
 
@@ -130,7 +127,6 @@ jobs:
               var tls = extractTag(text, "tls-auth") || extractTag(text, "tls-crypt");
               if (tls && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tls;
 
-              // 4. Extract Embedded Username/Password or Prompt User
               var auth = extractTag(text, "auth-user-pass");
               var requiresAuth = /^auth-user-pass/m.test(text);
 
@@ -171,6 +167,7 @@ jobs:
           if injected_count == 0:
               raise RuntimeError("ERROR: Could not find VPN Client ASP file to inject!")
           EOF
+          python3 inject_ovpn.py
 
       - name: Build Toolchain
         run: |
@@ -184,25 +181,31 @@ jobs:
         run: |
           cd padavan/trunk
           CONFIG_FILE="configs/templates/K2P.config"
-          
-          # Set UI language to English only
           sed -i 's/CONFIG_FIRMWARE_UI_LANG_CN=y/#CONFIG_FIRMWARE_UI_LANG_CN=y/g' $CONFIG_FILE
           echo "CONFIG_FIRMWARE_UI_LANG_EN=y" >> $CONFIG_FILE
-          
-          # Keep Essential Features: OpenVPN (Server & Client), OpenSSL, WISP Mode, DDNS
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENVPN.*/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE.*/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_WIFI2_APCLI.*/CONFIG_FIRMWARE_WIFI2_APCLI=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_WIFI5_APCLI.*/CONFIG_FIRMWARE_WIFI5_APCLI=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_DDNS.*/CONFIG_FIRMWARE_INCLUDE_DDNS=y/g' $CONFIG_FILE
-          
-          # Strip non-essential heavy extras to shrink firmware down to ~10MB
           for PKG in ARIA TRANSMISSION TOR SFE TCPDUMP HTTPS IPSET XUPNPD UPNP_IGD_V2 SHADOWSOCKS V2RAY SSR; do
             sed -i "s/^CONFIG_FIRMWARE_INCLUDE_${PKG}=y/#CONFIG_FIRMWARE_INCLUDE_${PKG}=y/g" $CONFIG_FILE
           done
           sed -i 's/^CONFIG_FIRMWARE_ENABLE_IPV6=y/#CONFIG_FIRMWARE_ENABLE_IPV6=y/g' $CONFIG_FILE
-          
-          # Copy template to active .config
           cp -f $CONFIG_FILE .config
 
       - name: Build K2P Firmware
+        run: |
+          cd padavan/trunk
+          ./clear_tree
+          fakeroot ./build_firmware_modify K2P
+
+      - name: Check Firmware Size
+        run: |
+          ls -lh padavan/trunk/images/*.trx
+
+      - name: Upload Firmware Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Phicomm-K2P-Padavan-Lite10MB-OVPN
+          path: padavan/trunk/images/*.trx
