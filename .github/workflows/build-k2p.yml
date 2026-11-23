@@ -1,4 +1,4 @@
-name: Build Phicomm K2P Padavan WISP and OVPN
+name: Build Phicomm K2P Padavan Clean UI
 
 on:
   workflow_dispatch:
@@ -24,79 +24,74 @@ jobs:
           REPO_PATH="hanwckf/rt-n56u.git"
           git clone --depth=1 "https://${REPO_HOST}/${REPO_PATH}" padavan
 
-      - name: Add OVPN Importer and Left Sidebar Shortcuts (WISP & VPN)
+      - name: Add Safe OVPN Importer Without Touching Core UI
         run: |
           python3 -c '
           import glob
 
-          # 1. Inject Smart OVPN Importer into VPN Client Page
+          # Only modify VPN_Client.asp safely without touching state.js or sidebar menus
           vpn_files = glob.glob("padavan/trunk/user/www/**/VPN_Client.asp", recursive=True) + glob.glob("padavan/trunk/user/www/**/vpnc.asp", recursive=True)
           
           upload_script = """
-          <div style="background:#eef6ff;padding:12px;margin:10px 0;border:1px solid #8ab4f8;border-radius:6px;">
+          <div style="background:#eef6ff;padding:10px;margin:8px 0;border:1px solid #8ab4f8;border-radius:4px;color:#000;">
             <b>Import .ovpn Config File: </b>
             <input type="file" id="ovpn_file_input" accept=".ovpn,.conf,.txt" onchange="parseOvpnFile(this)" />
-            <div id="ovpn_status_msg" style="margin-top:6px;color:#0b57d0;font-weight:bold;"></div>
+            <div id="ovpn_status_msg" style="margin-top:5px;color:#0b57d0;font-weight:bold;"></div>
           </div>
           <script>
           function parseOvpnFile(input) {
-            if (!input.files || !input.files) return;
+            if (!input.files || !input.files[0]) return;
             var reader = new FileReader();
             reader.onload = function(e) {
               var text = e.target.result;
               
-              // Remote Server & Port
               var remoteMatch = text.match(/^remote\\s+([^\\s]+)\\s+(\\d+)/m);
               if (remoteMatch) {
-                if (document.form.vpnc_peer) document.form.vpnc_peer.value = remoteMatch;
-                if (document.form.vpnc_ov_port) document.form.vpnc_ov_port.value = remoteMatch;
+                if (document.form.vpnc_peer) document.form.vpnc_peer.value = remoteMatch[1];
+                if (document.form.vpnc_ov_port) document.form.vpnc_ov_port.value = remoteMatch[2];
               }
               
-              // Protocol (UDP/TCP)
               var protoMatch = text.match(/^proto\\s+(udp|tcp)/mi);
               if (protoMatch && document.form.vpnc_ov_prot) {
-                document.form.vpnc_ov_prot.value = (protoMatch.toLowerCase() === "tcp") ? "1" : "0";
+                document.form.vpnc_ov_prot.value = (protoMatch[1].toLowerCase() === "tcp") ? "1" : "0";
               }
               
-              // Cipher
               var cipherMatch = text.match(/^(?:cipher|data-ciphers)\\s+([^\\s:]+)/m);
               if (cipherMatch && document.form.vpnc_ov_ciph) {
-                document.form.vpnc_ov_ciph.value = cipherMatch;
+                document.form.vpnc_ov_ciph.value = cipherMatch[1];
               }
               
-              // Certificates & Keys
               var caMatch = text.match(/<ca>([\\s\\S]*?)<\\/ca>/);
-              if (caMatch && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = caMatch.trim();
+              if (caMatch && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = caMatch[1].trim();
               
               var certMatch = text.match(/<cert>([\\s\\S]*?)<\\/cert>/);
-              if (certMatch && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = certMatch.trim();
+              if (certMatch && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = certMatch[1].trim();
               
               var keyMatch = text.match(/<key>([\\s\\S]*?)<\\/key>/);
-              if (keyMatch && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = keyMatch.trim();
+              if (keyMatch && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = keyMatch[1].trim();
               
               var tlsMatch = text.match(/<tls-auth>([\\s\\S]*?)<\\/tls-auth>/) || text.match(/<tls-crypt>([\\s\\S]*?)<\\/tls-crypt>/);
-              if (tlsMatch && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tlsMatch.trim();
+              if (tlsMatch && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tlsMatch[1].trim();
 
-              // Detect Embedded Username/Password or Auth Requirement
               var authBlock = text.match(/<auth-user-pass>([\\s\\S]*?)<\\/auth-user-pass>/);
               var requiresAuth = /^auth-user-pass/m.test(text);
               var msgBox = document.getElementById("ovpn_status_msg");
 
               if (authBlock) {
-                var creds = authBlock.trim().split(/\\r?\\n/);
+                var creds = authBlock[1].trim().split(/\\r?\\n/);
                 if (creds.length >= 2) {
-                  if (document.form.vpnc_user) document.form.vpnc_user.value = creds.trim();
-                  if (document.form.vpnc_pass) document.form.vpnc_pass.value = creds.trim();
-                  msgBox.innerHTML = "OVPN imported with embedded Username & Password! Click Apply to connect.";
+                  if (document.form.vpnc_user) document.form.vpnc_user.value = creds[0].trim();
+                  if (document.form.vpnc_pass) document.form.vpnc_pass.value = creds[1].trim();
+                  msgBox.innerHTML = "OVPN imported with Username & Password! Click Apply to connect.";
                 }
               } else if (requiresAuth) {
                 msgBox.style.color = "#c5221f";
-                msgBox.innerHTML = "OVPN imported! This server requires Username and Password. Please enter them below, then click Apply.";
+                msgBox.innerHTML = "OVPN imported! Please enter your Username and Password below, then click Apply.";
               } else {
                 msgBox.innerHTML = "OVPN certificates imported successfully! Click Apply to connect.";
               }
             };
-            reader.readAsText(input.files);
+            reader.readAsText(input.files[0]);
           }
           </script>
           """
@@ -108,38 +103,6 @@ jobs:
                   content = content.replace("<form ", upload_script + "\n<form ", 1)
                   with open(fpath, "w", encoding="utf-8") as f:
                       f.write(content)
-
-          # 2. Add Direct Left Sidebar Buttons for Wireless Router (WISP) & VPN Client
-          state_files = glob.glob("padavan/trunk/user/www/**/state.js", recursive=True)
-          for spath in state_files:
-              with open(spath, "r", encoding="utf-8", errors="ignore") as f:
-                  scontent = f.read()
-              
-              # Add WISP shortcut in Network/Wireless menu
-              if "Advanced_WAdvanced_Content.asp" in scontent and "Wireless Router (WISP)" not in scontent:
-                  scontent = scontent.replace(
-                      "Advanced_WAdvanced_Content.asp",
-                      "Advanced_WMode_Content.asp\", \"Wireless Router (WISP)\"], [\"Advanced_WAdvanced_Content.asp"
-                  )
-              
-              # Add direct VPN Client shortcut in the Left Main Sidebar
-              if "show_menu(" in scontent and "VPN Client (OVPN)" not in scontent:
-                  sidebar_btn = """
-                  document.addEventListener("DOMContentLoaded", function() {
-                    var menuBox = document.getElementById("mainMenu");
-                    if (menuBox) {
-                      var vpnBtn = document.createElement("div");
-                      vpnBtn.style.cssText = "margin:8px 6px;padding:10px;background:#1a73e8;color:#fff;text-align:center;font-weight:bold;border-radius:5px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.3);";
-                      vpnBtn.innerHTML = "VPN Client (OVPN)";
-                      vpnBtn.onclick = function() { location.href = "VPN_Client.asp"; };
-                      menuBox.appendChild(vpnBtn);
-                    }
-                  });
-                  """
-                  scontent += "\n" + sidebar_btn
-
-              with open(spath, "w", encoding="utf-8") as f:
-                  f.write(scontent)
           '
 
       - name: Build Toolchain
@@ -195,5 +158,5 @@ jobs:
       - name: Upload Firmware Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Phicomm-K2P-Padavan-WISP-OVPN
+          name: Phicomm-K2P-Padavan-CleanUI-OVPN
           path: padavan/trunk/images/*.trx
