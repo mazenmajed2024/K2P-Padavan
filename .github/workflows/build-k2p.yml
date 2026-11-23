@@ -20,32 +20,34 @@ jobs:
 
       - name: Clone Padavan Source (hanwckf)
         run: |
-          git clone --depth=1 https://github.com padavan
+          REPO_HOST="github.com"
+          REPO_PATH="hanwckf/rt-n56u.git"
+          git clone --depth=1 "https://${REPO_HOST}/${REPO_PATH}" padavan
 
-      - name: Configure K2P 16MB with OpenVPN & Full Network Controls
+      - name: Configure K2P 16MB with OpenVPN and Network Controls
         run: |
           cd padavan/trunk
           CONFIG_FILE="configs/templates/K2P.config"
           
-          # 1. ضبط اللغة الإنجليزية فقط
+          # Set UI language to English only
           sed -i 's/CONFIG_FIRMWARE_UI_LANG_CN=y/#CONFIG_FIRMWARE_UI_LANG_CN=y/g' $CONFIG_FILE
           echo "CONFIG_FIRMWARE_UI_LANG_EN=y" >> $CONFIG_FILE
           
-          # 2. تفعيل OpenVPN (Server & Client) و OpenSSL
+          # Enable OpenVPN (Server and Client) and OpenSSL
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENVPN.*/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE.*/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' $CONFIG_FILE
           
-          # 3. تفعيل أدوات الشبكة (DDNS, IPv6, HTTPS, tcpdump)
+          # Enable Network Controls (DDNS, IPv6, HTTPS, tcpdump)
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_DDNS.*/CONFIG_FIRMWARE_INCLUDE_DDNS=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_ENABLE_IPV6.*/CONFIG_FIRMWARE_ENABLE_IPV6=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_HTTPS.*/CONFIG_FIRMWARE_INCLUDE_HTTPS=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_TCPDUMP.*/CONFIG_FIRMWARE_INCLUDE_TCPDUMP=y/g' $CONFIG_FILE
           
-          # 4. إزالة الحزم الثقيلة للحفاظ على الحجم أقل من 15MB
+          # Remove heavy packages to keep firmware under 15MB
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/#CONFIG_FIRMWARE_INCLUDE_ARIA=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/#CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_FIRMWARE_INCLUDE_TOR=y/#CONFIG_FIRMWARE_INCLUDE_TOR=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/#CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
 
       - name: Build Toolchain
         run: |
