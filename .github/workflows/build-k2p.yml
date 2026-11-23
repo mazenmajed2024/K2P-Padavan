@@ -1,4 +1,4 @@
-name: Build Phicomm K2P Padavan Clean UI
+name: Build Phicomm K2P Padavan Lite 10MB OVPN
 
 on:
   workflow_dispatch:
@@ -24,64 +24,89 @@ jobs:
           REPO_PATH="hanwckf/rt-n56u.git"
           git clone --depth=1 "https://${REPO_HOST}/${REPO_PATH}" padavan
 
-      - name: Add Safe OVPN Importer Without Touching Core UI
+      - name: Inject OVPN File Importer and Live Status Badge into VPN Client Page
         run: |
-          python3 -c '
+          python3 - << 'EOF'
           import glob
 
-          # Only modify VPN_Client.asp safely without touching state.js or sidebar menus
-          vpn_files = glob.glob("padavan/trunk/user/www/**/VPN_Client.asp", recursive=True) + glob.glob("padavan/trunk/user/www/**/vpnc.asp", recursive=True)
-          
-          upload_script = """
-          <div style="background:#eef6ff;padding:10px;margin:8px 0;border:1px solid #8ab4f8;border-radius:4px;color:#000;">
-            <b>Import .ovpn Config File: </b>
-            <input type="file" id="ovpn_file_input" accept=".ovpn,.conf,.txt" onchange="parseOvpnFile(this)" />
-            <div id="ovpn_status_msg" style="margin-top:5px;color:#0b57d0;font-weight:bold;"></div>
+          upload_box = """
+          <div id="ovpn_importer_box" style="background:#e8f0fe;padding:12px;margin:10px 0;border:2px solid #1a73e8;border-radius:6px;color:#000;font-family:Arial,sans-serif;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;">
+            <div>
+              <span style="font-size:14px;font-weight:bold;color:#1a73e8;">Import .ovpn Config File: </span>
+              <input type="file" id="ovpn_file_input" accept=".ovpn,.conf,.txt" onchange="parseOvpnFile(this)" style="margin-left:8px;" />
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-weight:bold;font-size:13px;">Status:</span>
+              <span id="ovpn_live_badge" style="padding:4px 10px;border-radius:12px;font-size:12px;font-weight:bold;color:#fff;background:#d93025;">Disconnected</span>
+            </div>
+            <div id="ovpn_status_msg" style="width:100%;margin-top:4px;color:#0b57d0;font-weight:bold;font-size:13px;"></div>
           </div>
           <script>
+          function updateOvpnLiveStatus() {
+            var badge = document.getElementById("ovpn_live_badge");
+            if (!badge) return;
+            var isConnected = false;
+            var stateCell = document.getElementById("vpnc_state") || document.getElementById("vpnc_status");
+            if (stateCell && /connected/i.test(stateCell.innerText) && !/dis/i.test(stateCell.innerText)) {
+              isConnected = true;
+            }
+            if (typeof vpnc_state_t !== "undefined" && vpnc_state_t == 1) {
+              isConnected = true;
+            }
+            if (isConnected) {
+              badge.innerText = "Connected";
+              badge.style.background = "#188038";
+            } else {
+              badge.innerText = "Disconnected";
+              badge.style.background = "#d93025";
+            }
+          }
+          setInterval(updateOvpnLiveStatus, 2000);
+          window.addEventListener("load", updateOvpnLiveStatus);
+
           function parseOvpnFile(input) {
-            if (!input.files || !input.files[0]) return;
+            if (!input.files || !input.files) return;
             var reader = new FileReader();
             reader.onload = function(e) {
               var text = e.target.result;
               
-              var remoteMatch = text.match(/^remote\\s+([^\\s]+)\\s+(\\d+)/m);
+              var remoteMatch = text.match(/^remote\s+([^\s]+)\s+(\d+)/m);
               if (remoteMatch) {
-                if (document.form.vpnc_peer) document.form.vpnc_peer.value = remoteMatch[1];
-                if (document.form.vpnc_ov_port) document.form.vpnc_ov_port.value = remoteMatch[2];
+                if (document.form.vpnc_peer) document.form.vpnc_peer.value = remoteMatch;
+                if (document.form.vpnc_ov_port) document.form.vpnc_ov_port.value = remoteMatch;
               }
               
-              var protoMatch = text.match(/^proto\\s+(udp|tcp)/mi);
+              var protoMatch = text.match(/^proto\s+(udp|tcp)/mi);
               if (protoMatch && document.form.vpnc_ov_prot) {
-                document.form.vpnc_ov_prot.value = (protoMatch[1].toLowerCase() === "tcp") ? "1" : "0";
+                document.form.vpnc_ov_prot.value = (protoMatch.toLowerCase() === "tcp") ? "1" : "0";
               }
               
-              var cipherMatch = text.match(/^(?:cipher|data-ciphers)\\s+([^\\s:]+)/m);
+              var cipherMatch = text.match(/^(?:cipher|data-ciphers)\s+([^\s:]+)/m);
               if (cipherMatch && document.form.vpnc_ov_ciph) {
-                document.form.vpnc_ov_ciph.value = cipherMatch[1];
+                document.form.vpnc_ov_ciph.value = cipherMatch;
               }
               
-              var caMatch = text.match(/<ca>([\\s\\S]*?)<\\/ca>/);
-              if (caMatch && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = caMatch[1].trim();
+              var caMatch = text.match(/<ca>([\s\S]*?)<\/ca>/);
+              if (caMatch && document.form.ovpnc_ca_crt) document.form.ovpnc_ca_crt.value = caMatch.trim();
               
-              var certMatch = text.match(/<cert>([\\s\\S]*?)<\\/cert>/);
-              if (certMatch && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = certMatch[1].trim();
+              var certMatch = text.match(/<cert>([\s\S]*?)<\/cert>/);
+              if (certMatch && document.form.ovpnc_cli_crt) document.form.ovpnc_cli_crt.value = certMatch.trim();
               
-              var keyMatch = text.match(/<key>([\\s\\S]*?)<\\/key>/);
-              if (keyMatch && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = keyMatch[1].trim();
+              var keyMatch = text.match(/<key>([\s\S]*?)<\/key>/);
+              if (keyMatch && document.form.ovpnc_cli_key) document.form.ovpnc_cli_key.value = keyMatch.trim();
               
-              var tlsMatch = text.match(/<tls-auth>([\\s\\S]*?)<\\/tls-auth>/) || text.match(/<tls-crypt>([\\s\\S]*?)<\\/tls-crypt>/);
-              if (tlsMatch && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tlsMatch[1].trim();
+              var tlsMatch = text.match(/<tls-auth>([\s\S]*?)<\/tls-auth>/) || text.match(/<tls-crypt>([\s\S]*?)<\/tls-crypt>/);
+              if (tlsMatch && document.form.ovpnc_ta_key) document.form.ovpnc_ta_key.value = tlsMatch.trim();
 
-              var authBlock = text.match(/<auth-user-pass>([\\s\\S]*?)<\\/auth-user-pass>/);
+              var authBlock = text.match(/<auth-user-pass>([\s\S]*?)<\/auth-user-pass>/);
               var requiresAuth = /^auth-user-pass/m.test(text);
               var msgBox = document.getElementById("ovpn_status_msg");
 
               if (authBlock) {
-                var creds = authBlock[1].trim().split(/\\r?\\n/);
+                var creds = authBlock.trim().split(/\r?\n/);
                 if (creds.length >= 2) {
-                  if (document.form.vpnc_user) document.form.vpnc_user.value = creds[0].trim();
-                  if (document.form.vpnc_pass) document.form.vpnc_pass.value = creds[1].trim();
+                  if (document.form.vpnc_user) document.form.vpnc_user.value = creds.trim();
+                  if (document.form.vpnc_pass) document.form.vpnc_pass.value = creds.trim();
                   msgBox.innerHTML = "OVPN imported with Username & Password! Click Apply to connect.";
                 }
               } else if (requiresAuth) {
@@ -91,19 +116,27 @@ jobs:
                 msgBox.innerHTML = "OVPN certificates imported successfully! Click Apply to connect.";
               }
             };
-            reader.readAsText(input.files[0]);
+            reader.readAsText(input.files);
           }
           </script>
           """
 
-          for fpath in vpn_files:
+          injected_count = 0
+          for fpath in glob.glob("padavan/trunk/user/www/**/*.asp", recursive=True):
               with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                   content = f.read()
-              if "vpnc_peer" in content and "ovpn_file_input" not in content:
-                  content = content.replace("<form ", upload_script + "\n<form ", 1)
-                  with open(fpath, "w", encoding="utf-8") as f:
-                      f.write(content)
-          '
+              if "vpnc_peer" in content and "ovpn_importer_box" not in content:
+                  if "<form" in content:
+                      idx = content.find("<form")
+                      content = content[:idx] + upload_box + "\n" + content[idx:]
+                      with open(fpath, "w", encoding="utf-8") as f:
+                          f.write(content)
+                      print("SUCCESS: Injected OVPN Importer and Status Badge into", fpath)
+                      injected_count += 1
+
+          if injected_count == 0:
+              raise RuntimeError("ERROR: Could not find VPN Client ASP file to inject!")
+          EOF
 
       - name: Build Toolchain
         run: |
@@ -113,7 +146,7 @@ jobs:
           fi
           ./build_toolchain
 
-      - name: Configure K2P 16MB with OpenVPN, WISP Mode and Network Controls
+      - name: Configure K2P ~10MB Lite with OpenVPN, WISP Mode and Core Network Controls
         run: |
           cd padavan/trunk
           CONFIG_FILE="configs/templates/K2P.config"
@@ -122,25 +155,18 @@ jobs:
           sed -i 's/CONFIG_FIRMWARE_UI_LANG_CN=y/#CONFIG_FIRMWARE_UI_LANG_CN=y/g' $CONFIG_FILE
           echo "CONFIG_FIRMWARE_UI_LANG_EN=y" >> $CONFIG_FILE
           
-          # Enable OpenVPN (Server and Client) and OpenSSL
+          # Keep Essential Features: OpenVPN (Server & Client), OpenSSL, WISP Mode, DDNS
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENVPN.*/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE.*/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' $CONFIG_FILE
-          
-          # Enable Wireless AP-Client / WISP Mode (2.4G & 5G)
           sed -i 's/.*CONFIG_FIRMWARE_WIFI2_APCLI.*/CONFIG_FIRMWARE_WIFI2_APCLI=y/g' $CONFIG_FILE
           sed -i 's/.*CONFIG_FIRMWARE_WIFI5_APCLI.*/CONFIG_FIRMWARE_WIFI5_APCLI=y/g' $CONFIG_FILE
-          
-          # Enable Network Controls (DDNS, IPv6, HTTPS, tcpdump)
           sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_DDNS.*/CONFIG_FIRMWARE_INCLUDE_DDNS=y/g' $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_ENABLE_IPV6.*/CONFIG_FIRMWARE_ENABLE_IPV6=y/g' $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_HTTPS.*/CONFIG_FIRMWARE_INCLUDE_HTTPS=y/g' $CONFIG_FILE
-          sed -i 's/.*CONFIG_FIRMWARE_INCLUDE_TCPDUMP.*/CONFIG_FIRMWARE_INCLUDE_TCPDUMP=y/g' $CONFIG_FILE
           
-          # Remove heavy packages to keep firmware under 15MB
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/#CONFIG_FIRMWARE_INCLUDE_ARIA=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/#CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_TOR=y/#CONFIG_FIRMWARE_INCLUDE_TOR=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_SFE=y/#CONFIG_FIRMWARE_INCLUDE_SFE=y/g' $CONFIG_FILE
+          # Strip non-essential heavy extras to shrink firmware down to ~10MB
+          for PKG in ARIA TRANSMISSION TOR SFE TCPDUMP HTTPS IPSET XUPNPD UPNP_IGD_V2 SHADOWSOCKS V2RAY SSR; do
+            sed -i "s/^CONFIG_FIRMWARE_INCLUDE_${PKG}=y/#CONFIG_FIRMWARE_INCLUDE_${PKG}=y/g" $CONFIG_FILE
+          done
+          sed -i 's/^CONFIG_FIRMWARE_ENABLE_IPV6=y/#CONFIG_FIRMWARE_ENABLE_IPV6=y/g' $CONFIG_FILE
           
           # Copy template to active .config
           cp -f $CONFIG_FILE .config
@@ -158,5 +184,5 @@ jobs:
       - name: Upload Firmware Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Phicomm-K2P-Padavan-CleanUI-OVPN
+          name: Phicomm-K2P-Padavan-Lite10MB-OVPN
           path: padavan/trunk/images/*.trx
