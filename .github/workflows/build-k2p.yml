@@ -1,4 +1,4 @@
-name: Build Padavan K2P
+name: Build Easy OpenWrt K2P Auto-VPN
 
 on:
   workflow_dispatch:
@@ -11,136 +11,85 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip libtool-bin curl cmake gperf gawk flex bison \
-          nano xxd fakeroot git python3-docutils autopoint automake bash build-essential \
-          bzip2 cpio device-tree-compiler gettext help2man libncurses5-dev libssl-dev \
-          patch pkg-config rsync scons tar texinfo u-boot-tools util-linux wget zlib1g-dev python3
+          sudo apt-get install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3-setuptools rsync unzip zlib1g-dev file wget
 
-      - name: Clone Padavan Source
+      - name: Clone OpenWrt source
         run: |
-          git clone https://github.com
+          git clone https://openwrt.org
+          cd openwrt
+          git checkout openwrt-24.10
 
-      - name: Inject OVPN Auto-Importer
+      - name: Update feeds and add Argon theme
         run: |
-          cd rt-n56u
-          python3 - << 'EOF'
-          import os, sys
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          git clone https://github.com package/luci-theme-argon
 
-          target_file = "trunk/user/www/n56u_ribbon_fixed/vpnc.asp"
-          if not os.path.exists(target_file):
-              print("Error: vpnc.asp not found!")
-              sys.exit(1)
+      - name: Pre-configure VPN Network and Firewall
+        run: |
+          cd openwrt
+          mkdir -p files/etc/uci-defaults
+          cat << 'EOF' > files/etc/uci-defaults/99-auto-vpn-setup
+          #!/bin/sh
+          uci set network.vpn0=interface
+          uci set network.vpn0.proto='none'
+          uci set network.vpn0.device='tun0'
 
-          with open(target_file, "r", encoding="utf-8", errors="ignore") as f:
-              content = f.read()
+          uci add firewall zone
+          uci set firewall.@zone[-1].name='vpn_zone'
+          uci set firewall.@zone[-1].input='REJECT'
+          uci set firewall.@zone[-1].output='ACCEPT'
+          uci set firewall.@zone[-1].forward='REJECT'
+          uci set firewall.@zone[-1].masq='1'
+          uci set firewall.@zone[-1].mtu_fix='1'
+          uci add_list firewall.@zone[-1].network='vpn0'
 
-          ovpn_importer_code = """
-          <script>
-          function parseOVPNFile(input) {
-              var file = input.files;
-              if (!file) return;
-              var reader = new FileReader();
-              reader.onload = function(e) {
-                  var text = e.target.result;
-                  if (document.form.vpnc_type) {
-                      document.form.vpnc_type.value = "3";
-                      if (typeof change_vpnc_type === "function") change_vpnc_type();
-                  }
-                  var remoteMatch = text.match(/^remote\\s+([^\\s]+)\\s+(\\d+)/m);
-                  if (remoteMatch) {
-                      if (document.form.vpnc_peer) document.form.vpnc_peer.value = remoteMatch;
-                      if (document.form.vpnc_ov_port) document.form.vpnc_ov_port.value = remoteMatch;
-                  }
-                  var protoMatch = text.match(/^proto\\s+(udp|tcp)/mi);
-                  if (protoMatch && document.form.vpnc_ov_prot) {
-                      document.form.vpnc_ov_prot.value = (protoMatch.toLowerCase().indexOf('tcp') !== -1) ? '1' : '0';
-                  }
-                  var cipherMatch = text.match(/^(?:cipher|data-ciphers)\\s+([^\\r\\n]+)/m);
-                  if (cipherMatch && document.form.vpnc_ov_cnat) {
-                      var c = cipherMatch.split(':').trim();
-                      for (var i = 0; i < document.form.vpnc_ov_cnat.options.length; i++) {
-                          if (document.form.vpnc_ov_cnat.options[i].text.indexOf(c) !== -1) {
-                              document.form.vpnc_ov_cnat.selectedIndex = i;
-                              break;
-                          }
-                      }
-                  }
-                  if (/^auth-user-pass/m.test(text) && document.form.vpnc_ov_auth) {
-                      document.form.vpnc_ov_auth.value = "1";
-                      if (typeof change_vpnc_ov_auth === "function") change_vpnc_ov_auth();
-                  }
-                  var authBlockMatch = text.match(/<auth-user-pass>([\\s\\S]*?)<\\/auth-user-pass>/);
-                  if (authBlockMatch) {
-                      var lines = authBlockMatch.trim().split(/\\r?\\n/);
-                      if (lines.length >= 1 && document.form.vpnc_user) document.form.vpnc_user.value = lines.trim();
-                      if (lines.length >= 2 && document.form.vpnc_pass) document.form.vpnc_pass.value = lines.trim();
-                  }
-                  var caMatch = text.match(/<ca>([\\s\\S]*?)<\\/ca>/);
-                  if (caMatch && document.form.vpnc_ov_ca) document.form.vpnc_ov_ca.value = caMatch.trim();
-                  var certMatch = text.match(/<cert>([\\s\\S]*?)<\\/cert>/);
-                  if (certMatch && document.form.vpnc_ov_crt) document.form.vpnc_ov_crt.value = certMatch.trim();
-                  var keyMatch = text.match(/<key>([\\s\\S]*?)<\\/key>/);
-                  if (keyMatch && document.form.vpnc_ov_key) document.form.vpnc_ov_key.value = keyMatch.trim();
-                  var tlsMatch = text.match(/<(?:tls-auth|tls-crypt)>([\\s\\S]*?)<\\/(?:tls-auth|tls-crypt)>/);
-                  if (tlsMatch && document.form.vpnc_ov_tls) document.form.vpnc_ov_tls.value = tlsMatch.trim();
-                  var extraLines = [];
-                  text.split(/\\r?\\n/).forEach(function(line) {
-                      var l = line.trim();
-                      if (/^(comp-lzo|compress|auth\\s+|tls-client|remote-cert-tls|key-direction|tun-mtu|mssfix)/.test(l)) {
-                          extraLines.push(l);
-                      }
-                  });
-                  if (extraLines.length > 0 && document.form.vpnc_ov_conf) {
-                      document.form.vpnc_ov_conf.value = extraLines.join("\\n");
-                  }
-                  alert("OVPN File Loaded! Check Username/Password and click Apply.");
-              };
-              reader.readAsText(file);
-          }
-          </script>
-          <div style="background:#eef6ff;padding:10px;margin:10px 0;border:1px solid #99c2ff;border-radius:4px;">
-          <b>Import .OVPN File: </b>
-          <input type="file" accept=".ovpn,.conf" onchange="parseOVPNFile(this)" />
-          </div>
-          """
+          uci add firewall forwarding
+          uci set firewall.@forwarding[-1].src='lan'
+          uci set firewall.@forwarding[-1].dest='vpn_zone'
 
-          if '<form method="post" name="form"' not in content:
-              print("Error: Target form tag not found!")
-              sys.exit(1)
-
-          content = content.replace('<form method="post" name="form"', ovpn_importer_code + '\n<form method="post" name="form"', 1)
-          with open(target_file, "w", encoding="utf-8") as f:
-              f.write(content)
-          print("Success: OVPN importer injected.")
+          uci commit network
+          uci commit firewall
+          exit 0
           EOF
+          chmod +x files/etc/uci-defaults/99-auto-vpn-setup
 
-      - name: Build Toolchain
+      - name: Configure K2P firmware
         run: |
-          cd rt-n56u/toolchain-mipsel
-          ./clean_sources
-          ./build_toolchain
+          cd openwrt
+          cat << 'EOF' > .config
+          CONFIG_TARGET_ramips=y
+          CONFIG_TARGET_ramips_mt7621=y
+          CONFIG_TARGET_ramips_mt7621_DEVICE_phicomm_k2p=y
+          CONFIG_PACKAGE_kmod-tun=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-ssl=y
+          CONFIG_PACKAGE_luci-theme-argon=y
+          CONFIG_PACKAGE_openvpn-openssl=y
+          CONFIG_PACKAGE_luci-app-openvpn=y
+          CONFIG_PACKAGE_luci-app-upnp=y
+          EOF
+          make defconfig
 
-      - name: Build K2P Firmware
+      - name: Download packages and compile firmware
         run: |
-          cd rt-n56u/trunk
-          if [ -f "configs/templates/K2P.config" ]; then
-              cp configs/templates/K2P.config .config
-          elif [ -f "configs/templates/k2p.config" ]; then
-              cp configs/templates/k2p.config .config
-          else
-              echo "Error: K2P config template not found!"
-              exit 1
-          fi
-          sed -i 's/#CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/g' .config
-          sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENVPN=n/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/g' .config
-          ./clear_tree
-          ./build_firmware
+          cd openwrt
+          make download -j$(nproc)
+          make -j$(nproc)
 
-      - name: Upload Firmware Artifact
+      - name: Upload K2P Firmware
         uses: actions/upload-artifact@v4
         with:
-          name: K2P-Padavan-Firmware
-          path: rt-n56u/trunk/images/*.trx
+          name: Phicomm-K2P-Easy-VPN
+          path: openwrt/bin/targets/ramips/mt7621/*phicomm_k2p*sysupgrade.bin
